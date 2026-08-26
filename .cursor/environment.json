@@ -1,0 +1,11 @@
+{
+  "name": "Kidney Stone Detector",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "jupyter",
+      "command": "TF_USE_LEGACY_KERAS=1 .venv/bin/jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --ServerApp.token='' --ServerApp.password='' --ServerApp.disable_check_xsrf=True"
+    }
+  ],
+  "ports": [8888, 7860]
+}
