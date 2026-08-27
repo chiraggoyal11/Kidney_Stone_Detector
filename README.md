@@ -65,6 +65,17 @@ KIDNEY_EPOCHS=10 python train.py   # fewer epochs for a quick run
 Trained models are written to `models/` by default (override with
 `KIDNEY_MODEL_DIR`). The `data/` and `models/` directories are git-ignored.
 
+### Model architecture
+
+By default `train.py` trains a **MobileNetV2 transfer-learning** model
+(ImageNet-pretrained backbone + a small `softmax` head) — much stronger than a
+small from-scratch CNN on a limited dataset. Set `KIDNEY_MODEL_ARCH=simple` to
+train the lightweight from-scratch CNN instead. `train.py` also prints
+precision/recall/F1 for both the CNN and the SVM.
+
+The final prediction is a **soft-voting average** of the CNN and SVM stone
+probabilities (more robust than the old "either model fires" rule).
+
 ## Run the web app
 
 Once the models exist:
@@ -123,6 +134,7 @@ Spaces runs `app.py` automatically and serves it publicly.
 | `KIDNEY_DATA_DIR` | `data/CT_SCAN` | Dataset root (contains `Train/` and `Test/`). |
 | `KIDNEY_MODEL_DIR` | `models` | Where trained models are read/written. |
 | `KIDNEY_EPOCHS` | `50` | CNN training epochs (`train.py`). |
+| `KIDNEY_MODEL_ARCH` | `transfer` | CNN architecture: `transfer` (MobileNetV2) or `simple`. |
 | `TF_USE_LEGACY_KERAS` | `1` | Use the Keras 2 API (set automatically). |
 | `GRADIO_SERVER_NAME` | `0.0.0.0` | Interface the app binds to. |
 | `GRADIO_SERVER_PORT` | `7860` | Port the app serves on. |

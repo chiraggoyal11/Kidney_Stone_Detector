@@ -105,9 +105,9 @@ def predict_combined(img):
             svc_model.predict_proba(features_for_svm)[0][classes.index("Stone")]
         )
 
-        # Combined stone probability (either model can raise concern). This is the
-        # real model confidence, not a hardcoded floor.
-        stone_prob = max(cnn_stone_prob, svm_stone_prob)
+        # Combined stone probability: soft-voting average of the two models
+        # (more robust than max, which lets a single noisy model dominate).
+        stone_prob = (cnn_stone_prob + svm_stone_prob) / 2.0
         detail = f"(CNN: {cnn_stone_prob * 100:.1f}%, SVM: {svm_stone_prob * 100:.1f}%)"
 
         # Uncertain band: the models are not confident either way.
