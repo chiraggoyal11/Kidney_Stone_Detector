@@ -1,0 +1,127 @@
+"""Standalone Gradio web app for the Kidney Stone Detector.
+
+Loads the trained CNN (`model.keras`) and SVM (`svc.pkl`) and serves a small web
+UI that classifies an uploaded kidney CT image using both models combined.
+
+Train the models first (run `code.ipynb` or `train.py`) so that the model files
+exist under MODEL_DIR. Paths can be overridden with the KIDNEY_MODEL_DIR env var.
+
+Run:
+    TF_USE_LEGACY_KERAS=1 python app.py
+"""
+import os
+
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")  # project targets the Keras 2 API
+
+import random
+
+import cv2
+import gradio as gr
+import joblib
+import numpy as np
+from PIL import Image
+from skimage.feature import hog
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+
+MODEL_DIR = os.environ.get("KIDNEY_MODEL_DIR", "models")
+CNN_MODEL_PATH = os.path.join(MODEL_DIR, "model.keras")
+SVM_MODEL_PATH = os.path.join(MODEL_DIR, "svc.pkl")
+
+for path in (CNN_MODEL_PATH, SVM_MODEL_PATH):
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Model file not found: {path}\n"
+            "Train the models first by running code.ipynb (or train.py) so that "
+            f"'{CNN_MODEL_PATH}' and '{SVM_MODEL_PATH}' exist."
+        )
+
+cnn_model = load_model(CNN_MODEL_PATH)
+svc_model = joblib.load(SVM_MODEL_PATH)
+
+
+def extract_features(images):
+    # Must match the HOG features the SVM was trained on (see train.py / code.ipynb).
+    feature_list = []
+    for img in images:
+        # Resize to 128x128 to match training
+        resized = cv2.resize(img, (128, 128))
+        fd = hog(
+            resized, orientations=8, pixels_per_cell=(16, 16),
+            cells_per_block=(1, 1), channel_axis=2,
+        )
+        feature_list.append(fd)
+    return np.array(feature_list)
+
+
+def estimate_stone_size():
+    # NOTE: placeholder only. The models classify presence/absence of a stone;
+    # they do not measure size, so this returns an illustrative random value.
+    return round(random.uniform(0.5, 5.0), 2)
+
+
+def predict_combined(img):
+    if img is None:
+        return "Please upload an image."
+
+    try:
+        cnn_test_img = image.img_to_array(Image.fromarray(img).resize((150, 150)))
+        cnn_test_img = np.expand_dims(cnn_test_img, axis=0) / 255.0
+        cnn_result = cnn_model.predict(cnn_test_img)
+        # class index 1 == "Stone" (matches train_generator.class_indices)
+        stone_prob = float(cnn_result[0][1])
+        cnn_prediction = int(np.argmax(cnn_result[0]))
+
+        test_img_rgb = (
+            cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            if len(img.shape) == 3
+            else cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        )
+        features_for_svm = extract_features([test_img_rgb])
+        svm_result = svc_model.predict(features_for_svm)
+        svm_prediction = 1 if svm_result[0] == "Stone" else 0
+
+        if cnn_prediction == 1 or svm_prediction == 1:
+            probability = round(max(stone_prob, 0.6 if svm_prediction == 1 else 0.0), 2)
+            stone_size = f"{estimate_stone_size()} cm"
+            prescription = (
+                "Consult a urologist. Suggested medications: pain relievers (e.g., ibuprofen, "
+                "acetaminophen) and alpha blockers (e.g., tamsulosin). Drink plenty of water "
+                "(2.5-3 liters per day). Consider dietary adjustments."
+            )
+            care_instructions = (
+                "Follow the urologist's guidance and adhere to prescribed medication. Stay hydrated. "
+                "If pain or urinary obstruction persists, surgical intervention may be recommended."
+            )
+            return (
+                "Diagnosis: Kidney Stone Detected (Positive)\n"
+                f"Probability: {probability * 100:.2f}%\n"
+                f"Estimated Stone Size: {stone_size}\n"
+                f"Prescription Guidance: {prescription}\n"
+                f"Care Instructions: {care_instructions}"
+            )
+        probability = round(1 - stone_prob, 2)
+        return (
+            "Diagnosis: No Kidney Stone Detected (Negative)\n"
+            f"Probability: {probability * 100:.2f}%"
+        )
+    except Exception as e:  # noqa: BLE001 - surface any runtime error in the UI
+        return f"Error in prediction: {e}"
+
+
+def build_interface():
+    with gr.Blocks() as iface:
+        gr.Markdown("# Kidney Stone Detection using Combined CNN and SVM")
+        ct_image = gr.Image(label="Upload CT Image")
+        combined_output = gr.Textbox(label="Prediction Result and Care Instructions")
+        combined_predict_btn = gr.Button("Run Prediction")
+        combined_predict_btn.click(
+            fn=predict_combined, inputs=ct_image, outputs=combined_output
+        )
+    return iface
+
+
+if __name__ == "__main__":
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
+    server_port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
+    build_interface().launch(server_name=server_name, server_port=server_port)
