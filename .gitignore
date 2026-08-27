@@ -16,6 +16,7 @@ __pycache__/
 *.pyc
 
 # local CT-scan dataset and trained models (kept out of version control)
-OneDrive/
+data/
+models/
 *.keras
 *.pkl

@@ -19,4 +19,6 @@ fi
 ./.venv/bin/pip install -r requirements.txt
 
 echo "Setup complete. Activate with: source .venv/bin/activate"
-echo "The notebook uses the Keras 2 API; export TF_USE_LEGACY_KERAS=1 before running it."
+echo "The project targets the Keras 2 API (TF_USE_LEGACY_KERAS=1 is set automatically"
+echo "inside code.ipynb, app.py and train.py)."
+echo "Next: place the dataset under data/CT_SCAN, then run code.ipynb or 'python train.py'."

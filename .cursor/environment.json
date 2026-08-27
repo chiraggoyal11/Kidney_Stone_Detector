@@ -5,6 +5,10 @@
     {
       "name": "jupyter",
       "command": "TF_USE_LEGACY_KERAS=1 .venv/bin/jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --ServerApp.token='' --ServerApp.password='' --ServerApp.disable_check_xsrf=True"
+    },
+    {
+      "name": "gradio-app",
+      "command": "if [ -f models/model.keras ] && [ -f models/svc.pkl ]; then TF_USE_LEGACY_KERAS=1 .venv/bin/python app.py; else echo 'Models not found. Train first: run code.ipynb or `python train.py` to create models/model.keras and models/svc.pkl, then restart this terminal.'; fi"
     }
   ],
   "ports": [8888, 7860]
