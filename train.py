@@ -131,8 +131,11 @@ def train_svm():
         features, labels, test_size=0.2, random_state=0
     )
     # Standardize the HOG features before the RBF SVM (gamma="scale" is the
-    # modern default and works well with standardized inputs).
-    svc = make_pipeline(StandardScaler(), SVC(kernel="rbf", C=1, gamma="scale"))
+    # modern default and works well with standardized inputs). probability=True
+    # enables predict_proba so the app can report real confidence.
+    svc = make_pipeline(
+        StandardScaler(), SVC(kernel="rbf", C=1, gamma="scale", probability=True)
+    )
     svc.fit(X_train, y_train)
     print("SVM validation accuracy:", accuracy_score(y_valid, svc.predict(X_valid)))
 
