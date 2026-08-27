@@ -110,8 +110,12 @@ def predict_combined(img):
 
 
 def build_interface():
-    with gr.Blocks() as iface:
+    with gr.Blocks(title="Kidney Stone Detector") as iface:
         gr.Markdown("# Kidney Stone Detection using Combined CNN and SVM")
+        gr.Markdown(
+            "**Educational demo only — not a medical device.** Do not use for "
+            "diagnosis or treatment decisions."
+        )
         ct_image = gr.Image(label="Upload CT Image")
         combined_output = gr.Textbox(label="Prediction Result and Care Instructions")
         combined_predict_btn = gr.Button("Run Prediction")
@@ -124,4 +128,7 @@ def build_interface():
 if __name__ == "__main__":
     server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
     server_port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
-    build_interface().launch(server_name=server_name, server_port=server_port)
+    share = os.environ.get("GRADIO_SHARE", "0") == "1"
+    build_interface().launch(
+        server_name=server_name, server_port=server_port, share=share
+    )

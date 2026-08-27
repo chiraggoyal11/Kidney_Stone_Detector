@@ -79,6 +79,43 @@ an estimated probability, and (for positive cases) illustrative guidance.
 > Note: `estimate_stone_size()` returns an illustrative random value — the
 > models classify stone presence/absence, they do not measure stone size.
 
+## Deployment
+
+The app is a standard Gradio app, so it can be deployed several ways. In every
+case the trained models (`models/model.keras`, `models/svc.pkl`) must be
+available — train them first with `python train.py`.
+
+### Quick public link (temporary)
+
+For a throwaway public URL (tunnelled by Gradio, lasts ~72h, stays up only while
+the process runs):
+
+```bash
+GRADIO_SHARE=1 python app.py
+```
+
+### Docker (portable to Render, Railway, Fly.io, Cloud Run, …)
+
+```bash
+python train.py            # ensure models/ exists in the build context
+docker build -t kidney-stone-detector .
+docker run -p 7860:7860 kidney-stone-detector
+```
+
+If you prefer not to bake the models into the image, remove the `COPY models/`
+line from the `Dockerfile` and mount them at runtime:
+`docker run -p 7860:7860 -v "$(pwd)/models:/app/models" kidney-stone-detector`.
+
+### Hugging Face Spaces (free, persistent)
+
+1. Create a new Space with the **Gradio** SDK.
+2. Add `app.py` and `requirements.txt`, and set the Space secret/variable
+   `TF_USE_LEGACY_KERAS=1`.
+3. Upload the trained `models/model.keras` and `models/svc.pkl` (Spaces reads
+   models from `models/` by default; override with `KIDNEY_MODEL_DIR`).
+
+Spaces runs `app.py` automatically and serves it publicly.
+
 ## Configuration
 
 | Env var | Default | Purpose |
@@ -87,6 +124,9 @@ an estimated probability, and (for positive cases) illustrative guidance.
 | `KIDNEY_MODEL_DIR` | `models` | Where trained models are read/written. |
 | `KIDNEY_EPOCHS` | `50` | CNN training epochs (`train.py`). |
 | `TF_USE_LEGACY_KERAS` | `1` | Use the Keras 2 API (set automatically). |
+| `GRADIO_SERVER_NAME` | `0.0.0.0` | Interface the app binds to. |
+| `GRADIO_SERVER_PORT` | `7860` | Port the app serves on. |
+| `GRADIO_SHARE` | `0` | Set to `1` for a temporary public share link. |
 
 ## Disclaimer
 
