@@ -20,28 +20,36 @@ import cv2
 import joblib
 import numpy as np
 from skimage.feature import hog
-from sklearn.metrics import accuracy_score
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.layers import (
-    Activation, BatchNormalization, Conv2D, Dense, Dropout, Flatten, MaxPooling2D,
+    Activation, BatchNormalization, Conv2D, Dense, Dropout, Flatten,
+    GlobalAveragePooling2D, Input, MaxPooling2D, Rescaling,
 )
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 DATA_DIR = os.environ.get("KIDNEY_DATA_DIR", "data/CT_SCAN")
 MODEL_DIR = os.environ.get("KIDNEY_MODEL_DIR", "models")
 TRAIN_DIR = os.path.join(DATA_DIR, "Train")
+TEST_DIR = os.path.join(DATA_DIR, "Test")
 CNN_MODEL_PATH = os.path.join(MODEL_DIR, "model.keras")
 SVM_MODEL_PATH = os.path.join(MODEL_DIR, "svc.pkl")
 EPOCHS = int(os.environ.get("KIDNEY_EPOCHS", "50"))
 BATCH_SIZE = 15
+# "transfer" = MobileNetV2 transfer learning (default, stronger); "simple" = the
+# small from-scratch CNN.
+MODEL_ARCH = os.environ.get("KIDNEY_MODEL_ARCH", "transfer").lower()
+INPUT_SIZE = (150, 150)
 
 
-def build_cnn():
+def build_simple_cnn():
     model = Sequential()
     model.add(Conv2D(32, (3, 3), activation="relu", input_shape=(150, 150, 3)))
     model.add(BatchNormalization())
@@ -53,10 +61,51 @@ def build_cnn():
     model.add(Dense(128, activation="relu"))
     model.add(BatchNormalization())
     model.add(Dropout(0.5))
-    model.add(Dense(2))
-    model.add(Activation("sigmoid"))
-    model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+    model.add(Dense(2, activation="softmax"))
+    model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
     return model
+
+
+def build_transfer_cnn():
+    # MobileNetV2 pretrained on ImageNet as a frozen feature extractor + a small
+    # classification head. Inputs arrive rescaled to [0, 1] (matching the app and
+    # the ImageDataGenerator rescale); the Rescaling layer maps them to [-1, 1],
+    # which is what MobileNetV2 expects. Keeping preprocessing inside the model
+    # means the app needs no special handling.
+    inputs = Input(shape=(*INPUT_SIZE, 3))
+    x = Rescaling(scale=2.0, offset=-1.0)(inputs)
+    base = MobileNetV2(include_top=False, weights="imagenet", input_shape=(*INPUT_SIZE, 3))
+    base.trainable = False
+    x = base(x, training=False)
+    x = GlobalAveragePooling2D()(x)
+    x = Dropout(0.3)(x)
+    outputs = Dense(2, activation="softmax")(x)
+    model = Model(inputs, outputs)
+    model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+    return model
+
+
+def build_cnn():
+    if MODEL_ARCH == "transfer":
+        try:
+            print("Building MobileNetV2 transfer-learning model ...")
+            return build_transfer_cnn()
+        except Exception as e:  # e.g. no network for pretrained weights
+            print(f"[warn] transfer model unavailable ({e}); using simple CNN")
+    return build_simple_cnn()
+
+
+def evaluate_cnn(model):
+    if not os.path.isdir(TEST_DIR):
+        return
+    gen = ImageDataGenerator(rescale=1.0 / 255).flow_from_directory(
+        TEST_DIR, target_size=INPUT_SIZE, class_mode="categorical",
+        batch_size=BATCH_SIZE, shuffle=False,
+    )
+    y_pred = model.predict(gen).argmax(axis=1)
+    names = list(gen.class_indices.keys())
+    print("CNN test-set metrics:")
+    print(classification_report(gen.classes, y_pred, target_names=names, zero_division=0))
 
 
 def train_cnn():
@@ -96,6 +145,7 @@ def train_cnn():
     os.makedirs(MODEL_DIR, exist_ok=True)
     model.save(CNN_MODEL_PATH)
     print(f"Saved CNN -> {CNN_MODEL_PATH}")
+    evaluate_cnn(model)
 
 
 def read_images(path):
@@ -130,11 +180,18 @@ def train_svm():
     X_train, X_valid, y_train, y_valid = train_test_split(
         features, labels, test_size=0.2, random_state=0
     )
-    # Standardize the HOG features before the RBF SVM (gamma="scale" is the
-    # modern default and works well with standardized inputs).
-    svc = make_pipeline(StandardScaler(), SVC(kernel="rbf", C=1, gamma="scale"))
+    # Standardize the HOG features, then an RBF SVM wrapped in
+    # CalibratedClassifierCV so predict_proba returns well-calibrated
+    # probabilities (the modern replacement for SVC(probability=True)).
+    svc = make_pipeline(
+        StandardScaler(),
+        CalibratedClassifierCV(SVC(kernel="rbf", C=1, gamma="scale"), cv=3),
+    )
     svc.fit(X_train, y_train)
-    print("SVM validation accuracy:", accuracy_score(y_valid, svc.predict(X_valid)))
+    y_pred = svc.predict(X_valid)
+    print("SVM validation accuracy:", accuracy_score(y_valid, y_pred))
+    print("SVM validation metrics:")
+    print(classification_report(y_valid, y_pred, zero_division=0))
 
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(svc, SVM_MODEL_PATH)

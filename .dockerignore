@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+*.pyc
+data
+code.ipynb
+.cursor
+README.md
+# NOTE: models/ is intentionally NOT ignored — it must be copied into the image.
